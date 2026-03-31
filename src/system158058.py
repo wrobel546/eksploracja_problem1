@@ -23,6 +23,25 @@ class MySystem(RatingSystem):
 
         self.global_mean = total_sum / total_cnt if total_cnt else 2.5
 
+        self.movie_bias = {}
+        MOVIE_REG = 20.0
+
+        for movie_id, count in self.movie_cnt.items():
+            s = self.movie_sum[movie_id]
+            self.movie_bias[movie_id] = (s - count * self.global_mean) / (MOVIE_REG + count)
+
+    USER_REG = 15.0
+    def build_user_bias(self, user):
+        if not user.ratings:
+            return 0.0
+        bias_sum = 0.0
+        bias_cnt = 0
+        for movie_id, rating in user.ratings.items():
+            movie_id = int(movie_id)
+            bias_sum += float(rating) - self.global_mean - self.movie_bias.get(movie_id, 0.0)
+            bias_cnt += 1
+        return bias_sum / (self.USER_REG + bias_cnt)
+
     @staticmethod
     def _clip(x):
         if x < 0.5:
@@ -37,32 +56,13 @@ class MySystem(RatingSystem):
         x = MySystem._clip(float(x))
         return int(x * 2.0 + 0.5) / 2.0
 
-    def user_dif(self, user):
-        diff_sum = 0.0
-        diff_cnt = 0
-
-        for movie_id, rating in user.ratings.items():
-            movie_id = int(movie_id)
-            c = self.movie_cnt.get(movie_id, 0)
-            if c == 0:
-                continue
-            s = self.movie_sum[movie_id]
-            others_mean = s / c
-            diff_sum += float(rating) - others_mean
-            diff_cnt += 1
-
-        if diff_cnt == 0:
-            return 0.0
-        return diff_sum / diff_cnt
-
     def rate(self, user, movie):
         movie_id = int(movie)
         n = self.movie_cnt.get(movie_id, 0)
-        if n == 0:
-            return self.global_mean
-
-        others_mean = self.movie_sum[movie_id] / n
-        rate = others_mean + self.user_dif(user)
+        movie_bias = self.movie_bias.get(movie_id, 0.0)
+        user_bias = self.build_user_bias(user)
+        base = self.global_mean
+        rate = base + movie_bias + user_bias
         return self._normalize_to_half_step(rate)
 
     def __str__(self):
